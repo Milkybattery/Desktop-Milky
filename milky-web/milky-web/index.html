@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Milky</title>
+<meta name="description" content="Chat with Milky, a 3D robot girl with opinions.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%236b6577%27/%3E%3Crect x=%277%27 y=%279%27 width=%2718%27 height=%2715%27 rx=%272%27 fill=%27%23d2e3ff%27 stroke=%27%23231451%27 stroke-width=%272%27/%3E%3Ccircle cx=%2712.5%27 cy=%2715%27 r=%272%27 fill=%27%23231451%27/%3E%3Ccircle cx=%2719.5%27 cy=%2715%27 r=%272%27 fill=%27%23231451%27/%3E%3C/svg%3E">
+<link rel="preload" href="./assets/font.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/"
+} }
+</script>
+</head>
+<body>
+<main class="app">
+
+  <section class="stage" id="stage">
+    <canvas id="c"></canvas>
+
+    <div class="bubble hidden" id="bubble" role="status" aria-live="polite">
+      <div class="body"><div class="text" id="text"></div></div>
+      <svg class="tail" viewBox="0 0 100 50" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0,3 L98,27 L0,47 Z" class="fill"/>
+        <path d="M0,3 L98,27 L0,47" class="line"/>
+      </svg>
+    </div>
+
+    <div class="corner">
+      <button type="button" class="icon" id="logBtn" title="Conversation log" aria-label="Conversation log">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      </button>
+      <button type="button" class="icon" id="cogBtn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>
+      </button>
+    </div>
+
+    <div class="dropzone" id="drop">Drop files to show Milky</div>
+    <div class="loading" id="loading">Waking Milky up...</div>
+  </section>
+
+  <div class="chips" id="chips"></div>
+
+  <form class="pill" id="form" autocomplete="off">
+    <button type="button" class="plus" id="plus" title="Attach files" aria-label="Attach files">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <textarea id="input" rows="1" placeholder="Ask Milky" aria-label="Message Milky" enterkeyhint="send"></textarea>
+    <button type="submit" class="send" id="send" title="Send" aria-label="Send" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg>
+    </button>
+  </form>
+  <div class="status" id="status" role="alert"></div>
+
+  <input type="file" id="file" multiple hidden
+    accept="image/*,application/pdf,.txt,.md,.json,.csv,.tsv,.log,.js,.ts,.py,.html,.css,.xml,.yml,.yaml,.ini,.toml,.c,.cpp,.java,.rs,.go,.sh">
+</main>
+
+<dialog id="settings" class="sheet">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <label>OpenRouter API key
+      <input type="password" id="setKey" spellcheck="false" autocomplete="off">
+    </label>
+    <label>Model
+      <input type="text" id="setModel" spellcheck="false" autocomplete="off">
+      <small>Needs to accept images if you want to show her pictures.</small>
+    </label>
+    <label>Voice volume
+      <input type="range" id="setVol" min="0" max="1" step="0.05">
+    </label>
+    <label class="row"><input type="checkbox" id="setMute"> Mute her voice</label>
+    <label>Talking speed
+      <input type="range" id="setSpeed" min="0.025" max="0.12" step="0.005">
+    </label>
+    <div class="notes">
+      <strong>Things she has chosen to remember</strong>
+      <ul id="notesList"></ul>
+    </div>
+    <div class="actions">
+      <button type="button" id="clearMem" class="danger">Clear her memory</button>
+      <span class="spacer"></span>
+      <button value="cancel">Cancel</button>
+      <button value="save" id="saveSettings" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="logDlg" class="sheet">
+  <form method="dialog">
+    <h2>Conversation</h2>
+    <div class="log" id="logList"></div>
+    <div class="actions"><span class="spacer"></span><button class="primary" value="close">Close</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
