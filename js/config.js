@@ -1,7 +1,7 @@
 // Defaults. The settings panel (cog, top right of the stage) overrides these per browser.
 export const DEFAULTS = {
   apiKey: "",            // leave empty on the public site; the proxy holds the real key
-  proxyUrl: "PASTE_YOUR_WORKER_URL_HERE",
+  proxyUrl: "https://milky-proxy.zestyhoneyda.workers.dev/",
   model: "nemotron-3.5-super-vl:free",
   maxTokens: 3000,
   historyMessages: 16,   // how many recent messages she remembers verbatim
