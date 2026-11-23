@@ -3,15 +3,15 @@
 //  - the bubble never overlaps her: it sits on the side with room (left, else right, else above)
 //    and narrows horizontally to fit the free space when she takes up a lot of the stage
 //  - the tail's base is the middle of the bubble's edge that faces her
-//  - the tail points along the line to her head and stops short of her, leaving a gap
+//  - the tail points at a fixed spot on her head and stops a set distance short of it; that spot
+//    only moves when she does, not when she turns her head
 
 export class BubbleLayout {
   constructor({ stage, bubble }) {
     this.stage = stage;
     this.bubble = bubble;
     this.body = bubble.querySelector('.body');
-    this.fill = bubble.querySelector('.tail .fill');
-    this.line = bubble.querySelector('.tail .line');
+    this.path = bubble.querySelector('.shape path');
     this.side = 'left';
     this.lim = 0;       // width the bubble may use, with hysteresis so it doesn't flicker
     this.h = 0;         // bubble height from the last frame
@@ -32,7 +32,8 @@ export class BubbleLayout {
     const m = 0.035 * W;          // margin to the stage edge
     const pad = 0.022 * W;        // keep this far from her
     const tailMin = 0.06 * W;     // the tail always has at least this much room
-    const tailGap = 0.012 * W;    // the tail's tip stops this far from her
+    const tailGap = 0.03 * W;     // safety: the tip stops this far from her outline
+    const headGap = 0.115 * W;    // the tip stops this far from the spot she keeps her head
     const prefW = (small ? 0.66 : 0.36) * W;
     const minW = (small ? 0.4 : 0.17) * W;
     const ym = 0.05 * H;
@@ -101,41 +102,47 @@ export class BubbleLayout {
     const bw = b.offsetWidth, bh = b.offsetHeight;
     this.h = bh;
 
-    // tail: base in the middle of the edge facing her's head
+    // tail: base in the middle of the edge facing her head
     const cx = x + bw / 2, cy = ym + bh / 2;
     const dx = head.x - cx, dy = head.y - cy;
     const tx = dx ? (bw / 2) / Math.abs(dx) : Infinity;
     const ty = dy ? (bh / 2) / Math.abs(dy) : Infinity;
-    let nx = 0, ny = 0, bx, by, edgeLen;
-    if (tx < ty) { nx = dx > 0 ? 1 : -1; bx = x + (nx > 0 ? bw : 0); by = cy; edgeLen = bh; }
-    else { ny = dy > 0 ? 1 : -1; bx = cx; by = ym + (ny > 0 ? bh : 0); edgeLen = bw; }
-    const txv = ny ? 1 : 0, tyv = nx ? 1 : 0; // along the edge
+    let nx = 0, ny = 0, bx, by;
+    if (tx < ty) { nx = dx > 0 ? 1 : -1; bx = x + (nx > 0 ? bw : 0); by = cy; }
+    else { ny = dy > 0 ? 1 : -1; bx = cx; by = ym + (ny > 0 ? bh : 0); }
 
-    // march from the base towards her head; stop where her padded outline starts
+    // the tip sits a fixed distance short of her head's spot, on the line from the base to it
     const len = Math.hypot(head.x - bx, head.y - by) || 1;
     const ux = (head.x - bx) / len, uy = (head.y - by) / len;
+    let s = Math.max(len - headGap, 0.015 * W);
+    // safety: never let the tip reach into her outline, whatever pose she is in
     const clear = pad - tailGap;
-    let s = 0;
-    for (; s < len; s += 3) {
-      const px = bx + ux * s, py = by + uy * s;
+    for (let t = 0; t < s; t += 3) {
+      const px = bx + ux * t, py = by + uy * t;
       const r = Math.min(R - 1, Math.max(0, Math.floor(py / rowH)));
-      if (px > L[r] + clear && px < Rr[r] - clear) break;
+      if (px > L[r] + clear && px < Rr[r] - clear) { s = Math.max(t - 3, 0.015 * W); break; }
     }
-    s = Math.max(s - 3, 0.015 * W);
-    const tipX = bx + ux * s, tipY = by + uy * s;
+    const tipX = bx + ux * s - x, tipY = by + uy * s - ym;
 
-    // draw in the bubble's own coordinates
-    const ox = x, oy = ym;
-    const border = Math.max(2, 0.005 * W);
-    const hw = Math.min(0.02 * W, edgeLen * 0.3);
-    const p1 = [bx + txv * hw - ox, by + tyv * hw - oy];
-    const p2 = [bx - txv * hw - ox, by - tyv * hw - oy];
-    const i1 = [p1[0] - nx * border, p1[1] - ny * border];
-    const i2 = [p2[0] - nx * border, p2[1] - ny * border];
-    const tip = [tipX - ox, tipY - oy];
-    const f = (p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
-    this.fill.setAttribute('d', `M${f(i1)} L${f(p1)} L${f(tip)} L${f(p2)} L${f(i2)} Z`);
-    this.line.setAttribute('d', `M${f(p1)} L${f(tip)} L${f(p2)}`);
-    b.style.transformOrigin = `${(bx - ox).toFixed(1)}px ${(by - oy).toFixed(1)}px`;
+    // one outline for bubble and tail, so there is no seam between them
+    const sw = Math.max(2, 0.005 * W);
+    const r = Math.min(0.026 * W, bw / 2 - sw, bh / 2 - sw);
+    const x0 = sw / 2, y0 = sw / 2, x1 = bw - sw / 2, y1 = bh - sw / 2;
+    const mx = bw / 2, my = bh / 2;
+    const edge = nx ? bh : bw;
+    const hw = Math.max(1, Math.min(0.02 * W, (edge - 2 * r) * 0.45));
+    const T = `L${tipX.toFixed(1)} ${tipY.toFixed(1)} `;
+    let d = `M${x0 + r} ${y0} `;
+    if (ny < 0) d += `L${mx - hw} ${y0} ${T}L${mx + hw} ${y0} `;
+    d += `L${x1 - r} ${y0} A${r} ${r} 0 0 1 ${x1} ${y0 + r} `;
+    if (nx > 0) d += `L${x1} ${my - hw} ${T}L${x1} ${my + hw} `;
+    d += `L${x1} ${y1 - r} A${r} ${r} 0 0 1 ${x1 - r} ${y1} `;
+    if (ny > 0) d += `L${mx + hw} ${y1} ${T}L${mx - hw} ${y1} `;
+    d += `L${x0 + r} ${y1} A${r} ${r} 0 0 1 ${x0} ${y1 - r} `;
+    if (nx < 0) d += `L${x0} ${my + hw} ${T}L${x0} ${my - hw} `;
+    d += `L${x0} ${y0 + r} A${r} ${r} 0 0 1 ${x0 + r} ${y0} Z`;
+    this.path.setAttribute('d', d);
+    this.path.setAttribute('stroke-width', sw);
+    b.style.transformOrigin = `${(bx - x).toFixed(1)}px ${(by - ym).toFixed(1)}px`;
   }
 }

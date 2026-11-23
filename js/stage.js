@@ -170,6 +170,7 @@ export class Stage {
 
     this._applyPose(this.poses.neutral);
     this._placeModel();
+    this._anchorHead();
     this.ready = true;
     this._frameCamera();
     this.renderer.setAnimationLoop((t) => this._tick(t));
@@ -307,7 +308,7 @@ export class Stage {
       const all = [], head = [];
       for (let i = 0; i < count; i++) {
         if (i % 2 === 0) all.push(i);
-        if (i % 3 !== 0 || !si) continue;
+        if (!si) continue;
         let best = 0, bw = -1;
         for (let c = 0; c < 4; c++) { const w = sw.getComponent(i, c); if (w > bw) { bw = w; best = c; } }
         if (o.skeleton.bones[si.getComponent(i, best)]?.name === 'head') head.push(i);
@@ -318,24 +319,39 @@ export class Stage {
     this._sil = { parts, buf: new Float32Array(total * 2), v: new THREE.Vector3() };
   }
 
+  // The middle of her head in the neutral pose, stored relative to her base.
+  _anchorHead() {
+    const v = new THREE.Vector3(), sum = new THREE.Vector3();
+    let c = 0;
+    this.holder.updateMatrixWorld(true);
+    for (const { mesh, head } of this._sil.parts) {
+      for (const i of head) { sum.add(mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld)); c++; }
+    }
+    if (c) this.headAnchor = this.holder.worldToLocal(sum.divideScalar(c));
+  }
+
   // Her current outline as screen points (x, y pairs in stage pixels) plus the centre of her head.
   silhouette() {
     if (!this._sil) return null;
     const p = this.canvas.parentElement, W = p.clientWidth, H = p.clientHeight;
     const { parts, buf, v } = this._sil;
-    let n = 0, hx = 0, hy = 0, hn = 0;
-    for (const { mesh, all, head } of parts) {
+    let n = 0;
+    for (const { mesh, all } of parts) {
       for (const i of all) {
         mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld).project(this.camera);
         buf[n++] = (v.x * 0.5 + 0.5) * W;
         buf[n++] = (-v.y * 0.5 + 0.5) * H;
       }
-      for (const i of head) {
-        mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld).project(this.camera);
-        hx += (v.x * 0.5 + 0.5) * W; hy += (-v.y * 0.5 + 0.5) * H; hn++;
-      }
     }
-    return { buf, n, W, H, head: hn ? { x: hx / hn, y: hy / hn } : null };
+    // where her head sits on screen, from a fixed spot on her base: it follows her around the
+    // stage but ignores head turns, bobbing and pose changes
+    let head = null;
+    if (this.headAnchor) {
+      v.copy(this.headAnchor);
+      this.holder.localToWorld(v).project(this.camera);
+      head = { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H };
+    }
+    return { buf, n, W, H, head };
   }
 
   _blend() {
