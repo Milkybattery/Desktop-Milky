@@ -1,12 +1,16 @@
 // The 3D stage: Milky behind a desk, posed and animated procedurally.
 //
 // Poses are snapshots of every bone's local transform. "neutral" is built from the T-pose with a
-// few world-space rotations, "feetUp" is read from animations/pose1.glb, and emotions are small
-// tweaks on top of neutral. At runtime the poses are blended and a little breathing, swaying and
-// talking motion is layered over the top.
+// few world-space rotations, "feetUp" comes from js/feetup.js, and emotions are small tweaks on top
+// of neutral. At runtime the poses are blended and a little breathing, swaying and talking motion
+// is layered over the top.
+//
+// Bone names are the ones three.js sees, which is the Blender name with the dots stripped
+// ("arm1.L" in Blender is "arm1L" here).
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FEET_UP } from './feetup.js';
 
 const DEG = Math.PI / 180;
 const X = new THREE.Vector3(1, 0, 0);
@@ -14,19 +18,39 @@ const Y = new THREE.Vector3(0, 1, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 
 const OUTLINE = 0x231451;
-// Emotions that have their own head texture: add a name here once assets/faces/<name>.png exists.
+// Emotions that have their own face texture: add a name here once assets/faces/<name>.png exists.
+// Use the same size and layout as the face texture inside the model (1024 x 748).
 const CUSTOM_FACES = [];
-const MODEL_HEIGHT = 1.7; // world units; her T-pose is scaled to this tall
+const MODEL_HEIGHT = 1.53; // world units; her T-pose is scaled to this tall
 
-// World-space rotation recipes. Each step is [bone, axis, degrees]; "side" steps are mirrored so
-// that +1 is her screen-right arm. Applied parent-first.
+// Blender exports the "shiny" slipper materials as unlit with no colour (so they come out white).
+// Their colours are set here instead, keyed by material name.
+const MATERIAL_COLORS = {
+  blueshiny: 0xd5e5fd,    // soles
+  purpleshiny: 0x8f86e0,  // toes and toe beans
+  purpleshiny2: 0xa2a6e2, // ankles
+};
+
+// World-space rotation recipes. Each step is [bone, axis, degrees], applied parent-first.
+// swing(bone, from, to) is the step that turns a bone currently pointing along `from` to point
+// along `to`; arms are described that way because it is easier to say where they point than
+// which way they bend.
+const swing = (bone, from, to) => {
+  const a = from.clone().normalize(), b = to.clone().normalize();
+  return [bone, new THREE.Vector3().crossVectors(a, b).normalize(), Math.acos(a.dot(b)) / DEG];
+};
+
+// Arms: upper arms hang forward and a little out, forearms rest flat on the desk.
+// `side` is +1 for her left arm (screen right) and -1 for her right.
 function neutralRecipe() {
   const steps = [];
   for (const side of [1, -1]) {
-    const sfx = side === 1 ? 'l' : 'r'; // her left is screen right when she faces the camera
-    steps.push([`upperarm_${sfx}`, Z, -side * 58]);
-    steps.push([`lowerarm_${sfx}`, X, -62]);
-    steps.push([`hand_${sfx}`, X, -10]);
+    const sfx = side === 1 ? 'L' : 'R';
+    const out = new THREE.Vector3(side, 0, 0);               // T-pose: arm straight out
+    const upper = new THREE.Vector3(side * 0.2, -0.52, 0.8); // elbow forward and down
+    const fore = new THREE.Vector3(side * 0.07, -0.03, 0.99); // forearm forward, flat
+    steps.push(swing(`arm1${sfx}`, out, upper));
+    steps.push(swing(`arm2${sfx}`, upper, fore));
   }
   steps.push(['head', Z, 3]);
   return steps;
@@ -34,17 +58,17 @@ function neutralRecipe() {
 
 const EMOTION_RECIPES = {
   sad: [
-    ['spine_03', X, 9],
-    ['neck_01', X, 10],
+    ['spine2', X, 9],
+    ['neck', X, 10],
     ['head', X, 14],
-    ['upperarm_l', Z, -6], ['upperarm_r', Z, 6],
+    ['arm1L', X, -9], ['arm1R', X, -9], // keeps her hands on the desk as she leans forward
   ],
   uneasy: [
-    ['spine_03', Z, 4],
+    ['spine2', Z, 4],
     ['head', Z, -9],
     ['head', Y, 14],
-    ['shoulder_l', Z, 9], ['shoulder_r', Z, -9],
-    ['lowerarm_l', X, -16], ['lowerarm_r', X, -16],
+    ['shoulderL', Z, 9], ['shoulderR', Z, -9],
+    ['arm2L', X, -16], ['arm2R', X, -16],
   ],
 };
 
@@ -116,9 +140,8 @@ export class Stage {
 
   // ---------- loading ----------
 
-  async load(modelUrl, poseUrl) {
-    const loader = new GLTFLoader();
-    const [m, p] = await Promise.all([loader.loadAsync(modelUrl), loader.loadAsync(poseUrl)]);
+  async load(modelUrl) {
+    const m = await new GLTFLoader().loadAsync(modelUrl);
     const model = m.scene;
     this.model = model;
     this.holder.add(model);
@@ -128,7 +151,10 @@ export class Stage {
       if (o.isMesh) {
         o.frustumCulled = false;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const mt of mats) if (mt.name === 'head') this.headMat = mt;
+        for (const mt of mats) {
+          if (mt.name === 'face') this.headMat = mt;
+          if (MATERIAL_COLORS[mt.name] !== undefined) mt.color.setHex(MATERIAL_COLORS[mt.name]);
+        }
       }
     });
     if (this.headMat) this.baseHeadMap = this.headMat.map;
@@ -150,15 +176,12 @@ export class Stage {
     this._applyRecipe(neutralRecipe());
     this.poses.neutral = this._snapshot();
 
-    // feetUp: the single keyframe in pose1.glb
+    // feetUp: stored rotations (js/feetup.js) on top of the rest pose
     this._reset();
-    const mixer = new THREE.AnimationMixer(model);
-    const clip = p.animations.find((a) => a.tracks.length && a.duration === 0) || p.animations[0];
-    mixer.clipAction(clip).play();
-    mixer.update(0);
+    for (const [name, q] of Object.entries(FEET_UP.q)) this.bones[name]?.quaternion.fromArray(q);
+    this.bones.pelvis.position.y -= FEET_UP.pelvisDrop / this.k;
+    this.model.updateMatrixWorld(true);
     this.poses.feetUp = this._snapshot();
-    mixer.stopAllAction();
-    mixer.uncacheRoot(model);
 
     // emotions, as tweaks on top of neutral
     for (const [name, recipe] of Object.entries(EMOTION_RECIPES)) {
@@ -178,7 +201,7 @@ export class Stage {
 
   _placeModel() {
     // she stands behind the desk on the right-hand side of the stage
-    this.holder.position.set(0.93, 0.12, 0);
+    this.holder.position.set(0.93, 0.21, 0);
   }
 
   _frameCamera() {
@@ -241,7 +264,7 @@ export class Stage {
     this._applyFace(this.emotion);
   }
 
-  // optional: 1024x1024 head textures at assets/faces/<emotion>.png swap her face (see CUSTOM_FACES)
+  // optional: 1024x748 face textures at assets/faces/<emotion>.png swap her face (see CUSTOM_FACES)
   async _applyFace(name) {
     if (!this.headMat) return;
     if (name === 'neutral') { this.headMat.map = this.baseHeadMap; this.headMat.needsUpdate = true; return; }
@@ -306,8 +329,9 @@ export class Stage {
       const g = o.geometry, count = g.attributes.position.count;
       const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
       const all = [], head = [];
+      const step = Math.max(2, Math.round(count / 400)); // a few hundred points per part is plenty
       for (let i = 0; i < count; i++) {
-        if (i % 2 === 0) all.push(i);
+        if (i % step === 0) all.push(i);
         if (!si) continue;
         let best = 0, bw = -1;
         for (let c = 0; c < 4; c++) { const w = sw.getComponent(i, c); if (w > bw) { bw = w; best = c; } }
@@ -388,17 +412,17 @@ export class Stage {
     };
     const calm = 1 - this.feet * 0.5;
     // breathing and a lazy sway
-    wob('spine_02', 0.012 * calm, 0.01 * calm, 0.008 * calm, 1.4);
-    wob('spine_03', 0.01 * calm, 0.012 * calm, 0.006 * calm, 1.1);
+    wob('spine1', 0.012 * calm, 0.01 * calm, 0.008 * calm, 1.4);
+    wob('spine2', 0.01 * calm, 0.012 * calm, 0.006 * calm, 1.1);
     wob('head', 0.03, 0.045, 0.03, 0.8);
-    wob('upperarm_l', 0.01, 0, 0.012, 1.2);
-    wob('upperarm_r', 0.01, 0, 0.012, 1.3);
+    wob('arm1L', 0.01, 0, 0.012, 1.2);
+    wob('arm1R', 0.01, 0, 0.012, 1.3);
     // talking: faster, bigger head motion plus a bounce on every spoken letter
     if (this.talk > 0.01 || this.pulse > 0) {
       const a = this.talk * 0.05 + this.pulse * 0.05;
       wob('head', a, a * 0.8, a * 0.6, 5.5);
-      wob('neck_01', a * 0.4, 0, a * 0.3, 4.1);
-      wob('spine_03', this.talk * 0.012, 0, 0, 3.3);
+      wob('neck', a * 0.4, 0, a * 0.3, 4.1);
+      wob('spine2', this.talk * 0.012, 0, 0, 3.3);
     }
   }
 }

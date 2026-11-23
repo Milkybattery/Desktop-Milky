@@ -33,7 +33,7 @@ fetch('./personality.txt').then((r) => (r.ok ? r.text() : null)).then((t) => { i
 
 // ---------- stage loading ----------
 
-stage.load('./assets/milky.glb', './animations/pose1.glb')
+stage.load('./assets/milky.glb')
   .then(() => $('loading').classList.add('done'))
   .catch((err) => {
     console.error(err);
