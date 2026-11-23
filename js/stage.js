@@ -143,6 +143,7 @@ export class Stage {
 
     this.rest = this._snapshot();
     this.poses.rest = this.rest;
+    this._prepSilhouette();
 
     // neutral: relaxed, arms on the desk
     this._reset();
@@ -291,6 +292,50 @@ export class Stage {
 
     // the desk slides out of the way of the raised leg only visually; nothing else to do
     this.renderer.render(this.scene, this.camera);
+    if (this.onFrame) this.onFrame();
+  }
+
+  // ---------- screen-space silhouette (the speech bubble keeps clear of it) ----------
+
+  _prepSilhouette() {
+    const parts = [];
+    let total = 0;
+    this.model.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      const g = o.geometry, count = g.attributes.position.count;
+      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      const all = [], head = [];
+      for (let i = 0; i < count; i++) {
+        if (i % 2 === 0) all.push(i);
+        if (i % 3 !== 0 || !si) continue;
+        let best = 0, bw = -1;
+        for (let c = 0; c < 4; c++) { const w = sw.getComponent(i, c); if (w > bw) { bw = w; best = c; } }
+        if (o.skeleton.bones[si.getComponent(i, best)]?.name === 'head') head.push(i);
+      }
+      parts.push({ mesh: o, all, head });
+      total += all.length;
+    });
+    this._sil = { parts, buf: new Float32Array(total * 2), v: new THREE.Vector3() };
+  }
+
+  // Her current outline as screen points (x, y pairs in stage pixels) plus the centre of her head.
+  silhouette() {
+    if (!this._sil) return null;
+    const p = this.canvas.parentElement, W = p.clientWidth, H = p.clientHeight;
+    const { parts, buf, v } = this._sil;
+    let n = 0, hx = 0, hy = 0, hn = 0;
+    for (const { mesh, all, head } of parts) {
+      for (const i of all) {
+        mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld).project(this.camera);
+        buf[n++] = (v.x * 0.5 + 0.5) * W;
+        buf[n++] = (-v.y * 0.5 + 0.5) * H;
+      }
+      for (const i of head) {
+        mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld).project(this.camera);
+        hx += (v.x * 0.5 + 0.5) * W; hy += (-v.y * 0.5 + 0.5) * H; hn++;
+      }
+    }
+    return { buf, n, W, H, head: hn ? { x: hx / hn, y: hy / hn } : null };
   }
 
   _blend() {

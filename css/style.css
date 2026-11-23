@@ -100,18 +100,14 @@ body {
 @keyframes dots { 0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .2; } }
 
 .bubble .tail {
-  position: absolute;
-  left: calc(100% - max(2px, .5cqw));
-  top: 62%;
-  width: 9cqw;
-  height: 4.6cqw;
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px;
   overflow: visible;
   pointer-events: none;
 }
 .bubble .tail .fill { fill: #fff; }
 .bubble .tail .line {
   fill: none; stroke: var(--ink); stroke-width: max(2px, .5cqw);
-  stroke-linejoin: miter; vector-effect: non-scaling-stroke;
+  stroke-linejoin: miter; stroke-miterlimit: 10;
 }
 .bubble .tail .fill { stroke: none; }
 
@@ -216,7 +212,6 @@ dialog button.danger { background: transparent; color: #ff8c9a; padding-left: 0;
 @media (max-width: 700px) {
   :root { --aspect: 1.25; }
   .app { width: min(100vw - 20px, (100dvh - 150px) * var(--aspect)); }
-  .bubble { left: 3cqw; top: 3cqh; width: 66cqw; }
   .bubble .text { font-size: clamp(13px, 4.2cqw, 22px); }
 }
 @media (prefers-reduced-motion: reduce) {

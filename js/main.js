@@ -1,5 +1,6 @@
 import { Stage } from './stage.js';
 import { Speaker } from './speaker.js';
+import { BubbleLayout } from './bubble.js';
 import { Voice } from './voice.js';
 import { Memory } from './memory.js';
 import { buildSystem, streamChat, TagParser } from './brain.js';
@@ -20,6 +21,8 @@ const speaker = new Speaker({
   stage,
   letterSeconds: settings.letterSeconds,
 });
+const bubbleLayout = new BubbleLayout({ stage, bubble: $('bubble') });
+stage.onFrame = () => bubbleLayout.update();
 // every part starts from a plain face unless its own [EMOTION] tag says otherwise
 speaker.onPartStart = () => stage.setEmotion('neutral');
 
