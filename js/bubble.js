@@ -3,8 +3,8 @@
 //  - the bubble never overlaps her: it sits on the side with room (left, else right, else above)
 //    and narrows horizontally to fit the free space when she takes up a lot of the stage
 //  - the tail's base is the middle of the bubble's edge that faces her
-//  - the tail points at a fixed spot on her head and stops a set distance short of it; that spot
-//    only moves when she does, not when she turns her head
+//  - the tail's tip is a fixed spot beside her head; it only moves when she does, not when she
+//    turns her head or changes pose, and it goes behind her if she covers it
 
 export class BubbleLayout {
   constructor({ stage, bubble }) {
@@ -32,8 +32,7 @@ export class BubbleLayout {
     const m = 0.035 * W;          // margin to the stage edge
     const pad = 0.022 * W;        // keep this far from her
     const tailMin = 0.06 * W;     // the tail always has at least this much room
-    const tailGap = 0.03 * W;     // safety: the tip stops this far from her outline
-    const headGap = 0.115 * W;    // the tip stops this far from the spot she keeps her head
+    const headGap = 0.115 * W;    // the tip sits this far from the spot she keeps her head
     const prefW = (small ? 0.66 : 0.36) * W;
     const minW = (small ? 0.4 : 0.17) * W;
     const ym = 0.05 * H;
@@ -102,27 +101,22 @@ export class BubbleLayout {
     const bw = b.offsetWidth, bh = b.offsetHeight;
     this.h = bh;
 
-    // tail: base in the middle of the edge facing her head
+    // tail tip: a fixed spot beside her head, on the side the bubble is on. It depends only on where
+    // her base is, so it stays put when she turns her head, lifts her feet or the bubble resizes.
+    const away = side === 'right' ? 1 : side === 'top' ? 0 : -1;
+    const tipAbsX = head.x + away * headGap;
+    const tipAbsY = head.y - (side === 'top' ? headGap : 0);
+
+    // base: the middle of the bubble's edge that faces the tip
     const cx = x + bw / 2, cy = ym + bh / 2;
-    const dx = head.x - cx, dy = head.y - cy;
+    const dx = tipAbsX - cx, dy = tipAbsY - cy;
     const tx = dx ? (bw / 2) / Math.abs(dx) : Infinity;
     const ty = dy ? (bh / 2) / Math.abs(dy) : Infinity;
-    let nx = 0, ny = 0, bx, by;
-    if (tx < ty) { nx = dx > 0 ? 1 : -1; bx = x + (nx > 0 ? bw : 0); by = cy; }
-    else { ny = dy > 0 ? 1 : -1; bx = cx; by = ym + (ny > 0 ? bh : 0); }
-
-    // the tip sits a fixed distance short of her head's spot, on the line from the base to it
-    const len = Math.hypot(head.x - bx, head.y - by) || 1;
-    const ux = (head.x - bx) / len, uy = (head.y - by) / len;
-    let s = Math.max(len - headGap, 0.015 * W);
-    // safety: never let the tip reach into her outline, whatever pose she is in
-    const clear = pad - tailGap;
-    for (let t = 0; t < s; t += 3) {
-      const px = bx + ux * t, py = by + uy * t;
-      const r = Math.min(R - 1, Math.max(0, Math.floor(py / rowH)));
-      if (px > L[r] + clear && px < Rr[r] - clear) { s = Math.max(t - 3, 0.015 * W); break; }
-    }
-    const tipX = bx + ux * s - x, tipY = by + uy * s - ym;
+    let nx = 0, ny = 0;
+    if (tx < ty) nx = dx > 0 ? 1 : -1; else ny = dy > 0 ? 1 : -1;
+    const bx = nx ? x + (nx > 0 ? bw : 0) : cx;
+    const by = nx ? cy : ym + (ny > 0 ? bh : 0);
+    const tipX = tipAbsX - x, tipY = tipAbsY - ym;
 
     // one outline for bubble and tail, so there is no seam between them
     const sw = Math.max(2, 0.005 * W);
