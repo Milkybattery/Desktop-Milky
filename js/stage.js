@@ -24,9 +24,9 @@ const CUSTOM_FACES = [];
 const MODEL_HEIGHT = 1.53; // world units; her T-pose is scaled to this tall
 
 // Blender's Constant colour ramps for the three shiny slipper materials.
-// The ramps are evaluated against view-facing (1 - |N dot V|), matching a
-// Layer Weight/Facing-style ramp. GLTF cannot store Blender ColorRamp nodes,
-// so reproduce them in the unlit material shader at runtime.
+// The ramps are driven by the surface normal's alignment with the scene sun.
+// GLTF cannot store Blender ColorRamp nodes, so reproduce them in the unlit
+// material shader at runtime.
 const SHINY_RAMPS = {
   blueshiny: [
     [0.000, 0xc2cae2], [0.077, 0xb8c5e2], [0.221, 0xd3e5fd],
@@ -42,7 +42,7 @@ const SHINY_RAMPS = {
   ],
 };
 
-function applyConstantRamp(material, stops) {
+function applyConstantRamp(material, stops, sunDirection) {
   // Blender Constant interpolation keeps each stop's color until the next stop.
   // Three.js stores colors in linear space, so convert the supplied sRGB hex values
   // through THREE.Color before embedding them in the shader.
@@ -50,7 +50,6 @@ function applyConstantRamp(material, stops) {
     const color = new THREE.Color(hex);
     return { position, rgb: color.toArray().map((v) => v.toFixed(6)) };
   });
-  const first = colors[0];
   const last = colors[colors.length - 1];
   const branches = colors.slice(1).map((stop, index) => {
     const previous = colors[index];
@@ -59,29 +58,33 @@ function applyConstantRamp(material, stops) {
   }).join('\n');
 
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uRampSunDirection = { value: sunDirection };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vRampWorldNormal;
-        varying vec3 vRampWorldPosition;`)
+        varying vec3 vRampWorldNormal;`)
       .replace('#include <project_vertex>', `#include <project_vertex>
-        vRampWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
-        vRampWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+        vRampWorldNormal = normalize(mat3(modelMatrix) * objectNormal);`);
 
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vRampWorldNormal;
-        varying vec3 vRampWorldPosition;`)
+        uniform vec3 uRampSunDirection;`)
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-        float facing = 1.0 - abs(dot(normalize(vRampWorldNormal), normalize(cameraPosition - vRampWorldPosition)));
+        float facing = max(dot(normalize(vRampWorldNormal), normalize(uRampSunDirection)), 0.0);
         vec3 rampColor = vec3(${last.rgb.join(', ')});
         ${branches}
-        else { rampColor = vec3(${last.rgb.join(', ')}); }
-        diffuseColor.rgb = rampColor;`
+        else { rampColor = vec3(${last.rgb.join(', ')}); }`
+      )
+      // Replace the fully lit result with the ramp RGB, matching Blender's
+      // Shader to RGB -> ColorRamp -> Emission output.
+      .replace(
+        '#include <opaque_fragment>',
+        `outgoingLight = rampColor;\n        #include <opaque_fragment>`
       );
   };
-  material.customProgramCacheKey = () => `constant-facing-ramp-${material.name}-${stops.length}`;
+  material.customProgramCacheKey = () => `constant-sun-ramp-${material.name}-${stops.length}`;
   material.needsUpdate = true;
 }
 
@@ -138,8 +141,12 @@ export class Stage {
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
     const sun = new THREE.DirectionalLight(0xffffff, Math.PI * 0.9);
-    sun.position.set(-1.2, 2, 3);
-    this.scene.add(sun);
+    // Place the sun high and to the camera's left, aimed diagonally across the scene.
+    sun.position.set(-3.5, 6.5, 4.5);
+    sun.target.position.set(0.45, 1.4, 0);
+    this.sun = sun;
+    this.sunDirection = new THREE.Vector3().subVectors(sun.position, sun.target.position).normalize();
+    this.scene.add(sun, sun.target);
 
     this.holder = new THREE.Group();
     this.scene.add(this.holder);
@@ -207,7 +214,7 @@ export class Stage {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mt of mats) {
           if (mt.name === 'face') this.headMat = mt;
-          if (SHINY_RAMPS[mt.name]) applyConstantRamp(mt, SHINY_RAMPS[mt.name]);
+          if (SHINY_RAMPS[mt.name]) applyConstantRamp(mt, SHINY_RAMPS[mt.name], this.sunDirection);
         }
       }
     });
@@ -355,6 +362,7 @@ export class Stage {
     this.t = ms / 1000;
     if (!this.ready) return;
     const t = this.t;
+    this.sunDirection.subVectors(this.sun.position, this.sun.target.position).normalize();
     const ease = 1 - Math.pow(0.0015, dt); // frame-rate independent smoothing
 
     this.feet += (this.feetTarget - this.feet) * (1 - Math.pow(0.02, dt));
