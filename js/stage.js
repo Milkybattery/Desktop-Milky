@@ -43,15 +43,21 @@ const SHINY_RAMPS = {
 };
 
 function applyConstantRamp(material, stops) {
+  // Blender Constant interpolation keeps each stop's color until the next stop.
+  // Three.js stores colors in linear space, so convert the supplied sRGB hex values
+  // through THREE.Color before embedding them in the shader.
   const colors = stops.map(([position, hex]) => {
     const color = new THREE.Color(hex);
     return { position, rgb: color.toArray().map((v) => v.toFixed(6)) };
   });
-  const branches = colors.slice(1).map((stop) =>
-    `else if (facing < ${stop.position.toFixed(3)}) rampColor = vec3(${stop.rgb.join(', ')});`
-  ).join('\\n');
   const first = colors[0];
   const last = colors[colors.length - 1];
+  const branches = colors.slice(1).map((stop, index) => {
+    const previous = colors[index];
+    const keyword = index === 0 ? 'if' : 'else if';
+    return `${keyword} (facing < ${stop.position.toFixed(3)}) { rampColor = vec3(${previous.rgb.join(', ')}); }`;
+  }).join('\n');
+
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
@@ -60,6 +66,7 @@ function applyConstantRamp(material, stops) {
       .replace('#include <project_vertex>', `#include <project_vertex>
         vRampWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
         vRampWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vRampWorldNormal;
@@ -68,9 +75,9 @@ function applyConstantRamp(material, stops) {
         '#include <color_fragment>',
         `#include <color_fragment>
         float facing = 1.0 - abs(dot(normalize(vRampWorldNormal), normalize(cameraPosition - vRampWorldPosition)));
-        vec3 rampColor = vec3(${first.rgb.join(', ')});
+        vec3 rampColor = vec3(${last.rgb.join(', ')});
         ${branches}
-        else rampColor = vec3(${last.rgb.join(', ')});
+        else { rampColor = vec3(${last.rgb.join(', ')}); }
         diffuseColor.rgb = rampColor;`
       );
   };
