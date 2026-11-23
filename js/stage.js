@@ -23,13 +23,60 @@ const OUTLINE = 0x231451;
 const CUSTOM_FACES = [];
 const MODEL_HEIGHT = 1.53; // world units; her T-pose is scaled to this tall
 
-// Blender exports the "shiny" slipper materials as unlit with no colour (so they come out white).
-// Their colours are set here instead, keyed by material name.
-const MATERIAL_COLORS = {
-  blueshiny: 0xd5e5fd,    // soles
-  purpleshiny: 0x8f86e0,  // toes and toe beans
-  purpleshiny2: 0xa2a6e2, // ankles
+// Blender's Constant colour ramps for the three shiny slipper materials.
+// The ramps are evaluated against view-facing (1 - |N dot V|), matching a
+// Layer Weight/Facing-style ramp. GLTF cannot store Blender ColorRamp nodes,
+// so reproduce them in the unlit material shader at runtime.
+const SHINY_RAMPS = {
+  blueshiny: [
+    [0.000, 0xc2cae2], [0.077, 0xb8c5e2], [0.221, 0xd3e5fd],
+    [0.820, 0xdfecfd], [0.831, 0xffffff],
+  ],
+  purpleshiny: [
+    [0.000, 0xa5a4d1], [0.077, 0x8f8fca], [0.221, 0xa3a6e1],
+    [0.820, 0xbdbfe9], [0.831, 0xffffff],
+  ],
+  purpleshiny2: [
+    [0.000, 0xa5a4d1], [0.077, 0x8f8fca], [0.221, 0xa3a6e1],
+    [0.796, 0xbdbfe9], [0.828, 0xa3a6e1], [0.903, 0xbdbfe9],
+  ],
 };
+
+function applyConstantRamp(material, stops) {
+  const colors = stops.map(([position, hex]) => {
+    const color = new THREE.Color(hex);
+    return { position, rgb: color.toArray().map((v) => v.toFixed(6)) };
+  });
+  const branches = colors.slice(1).map((stop) =>
+    `else if (facing < ${stop.position.toFixed(3)}) rampColor = vec3(${stop.rgb.join(', ')});`
+  ).join('\\n');
+  const first = colors[0];
+  const last = colors[colors.length - 1];
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vRampWorldNormal;
+        varying vec3 vRampWorldPosition;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vRampWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
+        vRampWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vRampWorldNormal;
+        varying vec3 vRampWorldPosition;`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        float facing = 1.0 - abs(dot(normalize(vRampWorldNormal), normalize(cameraPosition - vRampWorldPosition)));
+        vec3 rampColor = vec3(${first.rgb.join(', ')});
+        ${branches}
+        else rampColor = vec3(${last.rgb.join(', ')});
+        diffuseColor.rgb = rampColor;`
+      );
+  };
+  material.customProgramCacheKey = () => `constant-facing-ramp-${material.name}-${stops.length}`;
+  material.needsUpdate = true;
+}
 
 // World-space rotation recipes. Each step is [bone, axis, degrees], applied parent-first.
 // swing(bone, from, to) is the step that turns a bone currently pointing along `from` to point
@@ -153,7 +200,7 @@ export class Stage {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mt of mats) {
           if (mt.name === 'face') this.headMat = mt;
-          if (MATERIAL_COLORS[mt.name] !== undefined) mt.color.setHex(MATERIAL_COLORS[mt.name]);
+          if (SHINY_RAMPS[mt.name]) applyConstantRamp(mt, SHINY_RAMPS[mt.name]);
         }
       }
     });
