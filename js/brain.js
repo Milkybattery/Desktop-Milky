@@ -73,17 +73,19 @@ export function buildSystem(personality, ctx) {
 
 // ---------- streaming ----------
 
-export async function* streamChat({ apiKey, model, messages, maxTokens, signal }) {
-  if (!apiKey) throw new Error('No API key set. Add one in settings (the cog in the corner).');
-  const res = await fetch(API_URL, {
+export async function* streamChat({ apiKey, proxyUrl, model, messages, maxTokens, signal }) {
+  // A key typed into settings talks to OpenRouter directly; otherwise go through the proxy.
+  if (!apiKey && (!proxyUrl || proxyUrl.startsWith('PASTE_'))) throw new Error('No connection set up. Add a key in settings (the cog) or set proxyUrl in js/config.js.');
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+    headers['HTTP-Referer'] = location.origin && location.origin !== 'null' ? location.origin : 'https://localhost';
+    headers['X-Title'] = 'Milky';
+  }
+  const res = await fetch(apiKey ? API_URL : proxyUrl, {
     method: 'POST',
     signal,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': location.origin && location.origin !== 'null' ? location.origin : 'https://localhost',
-      'X-Title': 'Milky',
-    },
+    headers,
     body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
   });
   if (!res.ok) {

@@ -1,6 +1,7 @@
 // Defaults. The settings panel (cog, top right of the stage) overrides these per browser.
 export const DEFAULTS = {
-  apiKey: "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",
+  apiKey: "",            // leave empty on the public site; the proxy holds the real key
+  proxyUrl: "PASTE_YOUR_WORKER_URL_HERE",
   model: "nemotron-3.5-super-vl:free",
   maxTokens: 3000,
   historyMessages: 16,   // how many recent messages she remembers verbatim

@@ -245,7 +245,7 @@ async function send() {
   speaker.begin();
   try {
     for await (const chunk of streamChat({
-      apiKey: settings.apiKey, model: settings.model, messages, maxTokens: settings.maxTokens, signal: mine.signal,
+      apiKey: settings.apiKey, proxyUrl: settings.proxyUrl, model: settings.model, messages, maxTokens: settings.maxTokens, signal: mine.signal,
     })) {
       raw += chunk;
       parser.feed(chunk);
